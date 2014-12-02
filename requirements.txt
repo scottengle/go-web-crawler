@@ -1,0 +1,20 @@
+Web Crawler
+
+- fetch goroutine gets URL from db buffer if: buffer is not empty and URL is in state "new"
+- - attempt to retrieve robots.txt from root of site
+- - - follow result handling based on https://developers.google.com/webmasters/control-crawl-index/docs/robots_txt
+- - - - use https://github.com/temoto/robotstxt-go
+- - If crawling allowed, perform GET on URL
+- - parse all href attributes of <a> tags on page
+- - - links have three states: new, visiting, complete
+- - - add link to db buffer if:
+- - - - link is not in the list
+- - - - link has a proper domain name (no IP addresses)
+- - - - domain name ends with .com, .org, .net, .edu or .us (blacklist everything else for now)
+- if buffer db is empty, sleep for 15 seconds and make another attempt (up to max tries)
+
+- Main allows an input for starting URL, number of concurrent goroutines, max tries
+- database columns for links: URL, page title, linked group, group id
+- group id is generated from the base-36 encoding of the URL
+- - use strconv formatint?
+- - linked group is generated using the base-36 encoding of the URL containing the link
