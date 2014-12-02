@@ -12,7 +12,7 @@ Web Crawler
 - - goroutine finishes when page is indexed
 - if buffer is empty, sleep for 15 seconds and make another attempt (up to max tries)
 
-- Main allows an input for starting URL, number of concurrent goroutines, max tries
+- Main allows an input for starting URL, number of concurrent goroutines, max page request queue size
 - results are written to standard output with the following JSON format:
 - - {"url": "some href", "title": "some title", "parent": "base-36 encoded url of parent", "id": "base-36 encoded URL of item"}
 - "id" is generated from the base-36 encoding of the URL

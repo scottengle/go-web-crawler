@@ -51,26 +51,29 @@ func start() int {
 	flag.Parse()
 
 	if *start == "" {
-		panic("No starting URL!")
+		panic("[go-web-crawler] No starting URL!")
 	}
 
 	if *maxQueue < 1 {
-		log.Println("Invalid max-queue-size. Reverting to default of 100.")
+		log.Println("[go-web-crawler] Invalid max-queue-size. Reverting to default of 100.")
 		*maxQueue = 100
 	}
 
 	if *maxWorkers < 1 {
-		log.Println("Invalid max-workers. Reverting to default of 10.")
+		log.Println("[go-web-crawler] Invalid max-workers. Reverting to default of 10.")
 	}
 
-	log.Printf("Started go-web-crawler at %s with %d max workers with a maximum page queue size of %d.\n", *start, *maxWorkers, *maxQueue)
+	log.Printf("[go-web-crawler] Started at page %s with %d indexers and with max size page request queue of %d", *start, *maxWorkers, *maxQueue)
 
 	PageQueue = make(chan PageRequest, *maxQueue)
 
 	StartDispatcher(*maxWorkers)
 
+	startPage := PageRequest{Href: "http://www.pearson.com"}
+	PageQueue <- startPage
+
 	select {
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		return 1
 	}
 }
