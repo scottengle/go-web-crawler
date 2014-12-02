@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"time"
 )
@@ -11,7 +12,8 @@ const helpText = `
 go-web-crawler
 
 go-web-crawler is a simple web crawler that will index URL's contained on pages
-fetched over http (or https). It will ignore URLs that do not have domain names
+fetched over http (or https) using a worker queue and a configurable number of 
+concurrent workers. It will ignore URLs that do not have domain names
 (IP addresses) and will only index URLs with .com, .org, .net, .edu or .us
 suffixes. It will also obey robots.txt directives per the Google spec:
 https://developers.google.com/webmasters/control-crawl-index/docs/robots_txt
@@ -19,10 +21,13 @@ https://developers.google.com/webmasters/control-crawl-index/docs/robots_txt
 Usage: %s [options]
 
 Options:
-   -help               show this help page
-   -start              the starting URL to index
-   -max-workers=10     maximum number of goroutines to run concurrently
+   -help                    show this help page
+   -start                   the starting URL to index
+   -max-workers=10          maximum number of goroutines to run concurrently
+   -max-queue-size=100      maximum number of queued page requests
 `
+
+var PageQueue chan PageRequest
 
 func main() {
 	// show help text if -help flag is specified
@@ -42,13 +47,27 @@ func start() int {
 
 	start := flag.String("start", "", "Start indexing on this URL")
 	maxWorkers := flag.Int("max-workers", 10, "Maximum number of indexing workers")
+	maxQueue := flag.Int("max-queue-size", 100, "Maximum number of queued page requests")
 	flag.Parse()
 
 	if *start == "" {
 		panic("No starting URL!")
 	}
 
-	fmt.Printf("Started go-web-crawler at %s with %d max workers.", *start, *maxWorkers)
+	if *maxQueue < 1 {
+		log.Println("Invalid max-queue-size. Reverting to default of 100.")
+		*maxQueue = 100
+	}
+
+	if *maxWorkers < 1 {
+		log.Println("Invalid max-workers. Reverting to default of 10.")
+	}
+
+	log.Printf("Started go-web-crawler at %s with %d max workers with a maximum page queue size of %d.\n", *start, *maxWorkers, *maxQueue)
+
+	PageQueue = make(chan PageRequest, *maxQueue)
+
+	StartDispatcher(*maxWorkers)
 
 	select {
 	case <-time.After(5 * time.Second):
