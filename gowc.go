@@ -100,7 +100,7 @@ func start() int {
 	QuitChannel = make(chan struct{})
 	StartDispatcher(*maxWorkers, *maxSeconds)
 
-	startPage := PageRequest{Href: "http://www.pearson.com"}
+	startPage := PageRequest{Href: *start}
 	PageQueue <- startPage
 
 	select {
