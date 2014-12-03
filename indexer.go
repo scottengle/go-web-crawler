@@ -4,9 +4,11 @@ import (
 	"code.google.com/p/go-html-transform/h5"
 	exphtml "code.google.com/p/go.net/html"
 	"crypto/md5"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/coopernurse/gorp"
 	"github.com/temoto/robotstxt-go"
 	"log"
 	"net/http"
@@ -99,7 +101,8 @@ func (idxr *Indexer) ProcessPage(pageRequest PageRequest) {
 			return
 		}
 
-		results := idxr.ScrapePage(resp, rootURL, pageRequest.Href)
+		dbmap := connect()
+		results := idxr.ScrapePage(resp, rootURL, pageRequest.Href, dbmap)
 		for _, link := range results {
 
 			result, err := json.Marshal(link)
@@ -107,7 +110,28 @@ func (idxr *Indexer) ProcessPage(pageRequest PageRequest) {
 				log.Printf("Indexer %d] Error received during json encoding: %s", idxr.ID, err.Error())
 			}
 
-			log.Printf("[Indexer %d] Found: %s", idxr.ID, result)
+			log.Printf("[Indexer %d] Found result: %s", idxr.ID, result)
+
+			// request processing for the result if it has not been processed
+			var processedLinks []Link
+
+			tx, _ := dbmap.Begin()
+			_, err = tx.Select(&processedLinks, "SELECT * FROM links WHERE Parent LIKE ?", GetMD5Hash(link.URL))
+			if err != nil {
+				tx.Rollback()
+			} else {
+				tx.Commit()
+			}
+
+			results, err := json.Marshal(processedLinks)
+			if err == nil {
+				log.Printf("[Indexer %d] Found parent %s with data %s", idxr.ID, link.URL, results)
+			}
+
+			if len(processedLinks) == 0 {
+				newRequest := PageRequest{Href: link.URL}
+				PageQueue <- newRequest
+			}
 		}
 
 	} else {
@@ -146,7 +170,7 @@ func (idxr *Indexer) AuthorizeRobot(robotsURL string, pageRequest PageRequest) (
 }
 
 // ScrapePage takes a response body and scrapes it for all a tags
-func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string) []Link {
+func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, dbmap *gorp.DbMap) []Link {
 
 	tree, _ := h5.New(resp.Body)
 	defer resp.Body.Close()
@@ -174,7 +198,39 @@ func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string) 
 					}
 
 					if !exists {
-						links = append(links, NewLink(GetMD5Hash(parentURL), GetMD5Hash(url), url))
+
+						log.Println("Parent: " + parentURL + ", URL: " + url)
+						newLink := NewLink(GetMD5Hash(parentURL), url)
+						existingLink := NewLink(GetMD5Hash(parentURL), url)
+						log.Printf("Existing Link %v", &existingLink)
+
+						tx, err := dbmap.Begin()
+
+						if err != nil {
+							log.Fatalf("[Indexer %d] Transaction was nil. Error: %s. Couldn't insert URL %s with Parent %s", idxr.ID, err.Error(), existingLink.URL, existingLink.Parent)
+							continue
+						}
+
+						selectErr := tx.SelectOne(&existingLink, "SELECT * FROM links WHERE URL LIKE ? and Parent LIKE ?;", existingLink.URL, existingLink.Parent)
+						tx.Commit()
+
+						switch {
+						case selectErr == sql.ErrNoRows:
+							txInsert, _ := dbmap.Begin()
+							insertErr := txInsert.Insert(&newLink)
+							checkErr(insertErr, "Error inserting link into db")
+							if insertErr != nil {
+								txInsert.Rollback()
+							} else {
+								txInsert.Commit()
+							}
+
+						case selectErr != nil:
+							checkErr(selectErr, "Error retrieving link")
+						}
+
+						links = append(links, newLink)
+
 					}
 				}
 			}

@@ -24,3 +24,4 @@ _testmain.go
 *.prof
 
 go-web-crawler
+post_db.bin
