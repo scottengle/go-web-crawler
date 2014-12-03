@@ -3,6 +3,9 @@ package main
 import (
 	"code.google.com/p/go-html-transform/h5"
 	exphtml "code.google.com/p/go.net/html"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/temoto/robotstxt-go"
 	"log"
@@ -87,36 +90,25 @@ func (idxr *Indexer) ProcessPage(pageRequest PageRequest) {
 
 		log.Printf("[Indexer %d] Indexing of %s authorized by robots.txt", idxr.ID, pageRequest.Href)
 
-		log.Printf("[Indexer %d] Starting crawl of %s", idxr.ID, pageRequest.Href)
+		log.Printf("[Indexer %d] Starting scrape of %s", idxr.ID, pageRequest.Href)
 
 		resp, err := http.Get(pageRequest.Href)
-		defer resp.Body.Close()
+
 		if err != nil {
 			log.Printf("[Indexer %d] Error received while retrieving %s: %s", idxr.ID, pageRequest.Href, err.Error())
 			return
 		}
 
-		tree, _ := h5.New(resp.Body)
+		results := idxr.ScrapePage(resp, rootURL, pageRequest.Href)
+		for _, link := range results {
 
-		tree.Walk(func(node *exphtml.Node) {
-
-			if node.Type == exphtml.ElementNode && node.Data == "a" {
-
-				for _, elem := range node.Attr {
-					if elem.Key == "href" {
-
-						url := elem.Val
-
-						if strings.HasPrefix(elem.Val, "/") {
-							url = fmt.Sprintf("%s%s", rootURL, elem.Val)
-						}
-
-						log.Printf("[Indexer %d] Found %s", idxr.ID, url)
-					}
-				}
+			result, err := json.Marshal(link)
+			if err != nil {
+				log.Printf("Indexer %d] Error received during json encoding: %s", idxr.ID, err.Error())
 			}
 
-		})
+			log.Printf("[Indexer %d] Found: %s", idxr.ID, result)
+		}
 
 	} else {
 
@@ -151,4 +143,54 @@ func (idxr *Indexer) AuthorizeRobot(robotsURL string, pageRequest PageRequest) (
 	log.Printf("[Indexer %d] Received status code %d from %s", idxr.ID, resp.StatusCode, robotsURL)
 
 	return authorizer.TestAgent(pageRequest.Href, "go-web-crawler"), nil
+}
+
+// ScrapePage takes a response body and scrapes it for all a tags
+func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string) []Link {
+
+	tree, _ := h5.New(resp.Body)
+	defer resp.Body.Close()
+
+	links := make([]Link, 0)
+
+	tree.Walk(func(node *exphtml.Node) {
+
+		if node.Type == exphtml.ElementNode && node.Data == "a" {
+
+			for _, elem := range node.Attr {
+				if elem.Key == "href" {
+
+					url := elem.Val
+
+					if strings.HasPrefix(elem.Val, "/") {
+						url = fmt.Sprintf("%s%s", rootURL, elem.Val)
+					}
+
+					exists := false
+					for _, link := range links {
+						if url == link.URL {
+							exists = true
+						}
+					}
+
+					if !exists {
+						links = append(links, NewLink(GetMD5Hash(parentURL), GetMD5Hash(url), url))
+					}
+				}
+			}
+		}
+	})
+
+	return links
+}
+
+// GetMD5Hash converts the specified text to an MD5 hash
+func GetMD5Hash(text string) string {
+
+	hasher := md5.New()
+
+	hasher.Write([]byte(text))
+
+	return hex.EncodeToString(hasher.Sum(nil))
+
 }
