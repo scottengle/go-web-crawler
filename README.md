@@ -6,8 +6,8 @@ A toy web crawler written in Go for a "Dev Day" over the course of about 12 hour
 Requirements
 ============
 
-3rd party dependencies have not been vendored yet. The following packages are
-required to build. You should be able to "go get" these:
+3rd party dependencies are not currently vendored. The following packages are
+required to build this application. You should be able to "go get" these:
 
 [Gorp] (https://github.com/coopernurse/gorp)
 
