@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/md5"
-	"database/sql"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/coopernurse/gorp"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -46,6 +44,8 @@ var QuitChannel chan struct{}
 // Lock is a mutex used to protect the database
 var Lock = &sync.Mutex{}
 
+var Logger *Log
+
 func main() {
 	// show help text if -help flag is specified
 	if len(os.Args) == 2 && os.Args[1] == "-help" {
@@ -68,7 +68,10 @@ func start() int {
 	maxSeconds := flag.Int("max-runtime-seconds", 10, "Maximum number of seconds to run the crawler")
 	report := flag.Int("report", 0, "Generate a report without crawling")
 	format := flag.String("report-format", "json", "Format of the report. Value is ignored if not running reports.")
+	verbose := flag.Bool("verbose", false, "Enable verbose output")
 	flag.Parse()
+
+	Logger = NewLog(*verbose)
 
 	if *start == "" && *report == 0 {
 		log.Println("[go-web-crawler] No starting URL specified and invalid report.")
@@ -128,47 +131,6 @@ func start() int {
 	case <-QuitChannel:
 		log.Println("[go-web-crawler] Quit signal received. Quitting.")
 		return 0
-	}
-}
-
-func initDb() {
-	dbmap := connect()
-
-	// create the table. in a production system you'd generally
-	// use a migration tool, or create the tables via script
-	err := dbmap.CreateTablesIfNotExists()
-	checkErr(err, "Create tables failed")
-
-	dbmap.TruncateTables()
-	disconnect(dbmap)
-}
-
-func connect() *gorp.DbMap {
-	Lock.Lock()
-
-	// connect to db using standard Go database/sql API
-	// use whatever database/sql driver you wish
-	db, err := sql.Open("sqlite3", "post_db.bin")
-	checkErr(err, "sql.Open failed")
-
-	// construct a gorp DbMap
-	dbmap := &gorp.DbMap{Db: db, Dialect: gorp.SqliteDialect{}}
-
-	// add a table, setting the table name to 'posts' and
-	// specifying that the Id property is an auto incrementing PK
-	dbmap.AddTableWithName(Link{}, "links").SetKeys(true, "ID")
-
-	return dbmap
-}
-
-func disconnect(dbmap *gorp.DbMap) {
-	dbmap.Db.Close()
-	Lock.Unlock()
-}
-
-func checkErr(err error, msg string) {
-	if err != nil {
-		log.Fatalln(msg, err)
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -44,12 +43,12 @@ func (idxr *Indexer) Start() {
 
 			select {
 			case pageRequest := <-idxr.Page:
-				log.Printf("[Indexer %d] Received request for page %s\n", idxr.ID, pageRequest.Href)
+				Logger.Logf("[Indexer %d] Received request for page %s\n", idxr.ID, pageRequest.Href)
 
 				idxr.ProcessPage(pageRequest)
 
 			case <-idxr.QuitChan:
-				log.Printf("[Indexer %d]: Stopped\n", idxr.ID)
+				Logger.Logf("[Indexer %d]: Stopped\n", idxr.ID)
 				return
 			}
 		}
@@ -69,7 +68,7 @@ func (idxr *Indexer) ProcessPage(pageRequest PageRequest) {
 	u, err := url.Parse(pageRequest.Href)
 	if err != nil {
 
-		log.Printf("[Indexer %d] Unable to parse URL: %s\nError: %s", idxr.ID, pageRequest.Href, err.Error())
+		Logger.Logf("[Indexer %d] Unable to parse URL: %s\nError: %s", idxr.ID, pageRequest.Href, err.Error())
 		return
 
 	}
@@ -77,7 +76,7 @@ func (idxr *Indexer) ProcessPage(pageRequest PageRequest) {
 	rootURL := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 
 	robotsURL := fmt.Sprintf("%s/robots.txt", rootURL)
-	log.Printf("[Indexer %d] Attempting to retrieve robots.txt at %s", idxr.ID, robotsURL)
+	Logger.Logf("[Indexer %d] Attempting to retrieve robots.txt at %s", idxr.ID, robotsURL)
 
 	authorized, err := idxr.AuthorizeRobot(robotsURL, pageRequest)
 	if err != nil {
@@ -89,14 +88,14 @@ func (idxr *Indexer) ProcessPage(pageRequest PageRequest) {
 
 	if authorized {
 
-		log.Printf("[Indexer %d] Indexing of %s authorized by robots.txt", idxr.ID, pageRequest.Href)
+		Logger.Logf("[Indexer %d] Indexing of %s authorized by robots.txt", idxr.ID, pageRequest.Href)
 
-		log.Printf("[Indexer %d] Starting scrape of %s", idxr.ID, pageRequest.Href)
+		Logger.Logf("[Indexer %d] Starting scrape of %s", idxr.ID, pageRequest.Href)
 
 		resp, err := http.Get(pageRequest.Href)
 
 		if err != nil {
-			log.Printf("[Indexer %d] Error received while retrieving %s: %s", idxr.ID, pageRequest.Href, err.Error())
+			Logger.Logf("[Indexer %d] Error received while retrieving %s: %s", idxr.ID, pageRequest.Href, err.Error())
 			return
 		}
 
@@ -108,10 +107,10 @@ func (idxr *Indexer) ProcessPage(pageRequest PageRequest) {
 
 			result, err := json.Marshal(link)
 			if err != nil {
-				log.Printf("Indexer %d] Error received during json encoding: %s", idxr.ID, err.Error())
+				Logger.Logf("Indexer %d] Error received during json encoding: %s", idxr.ID, err.Error())
 			}
 
-			log.Printf("[Indexer %d] Found result: %s", idxr.ID, result)
+			Logger.Logf("[Indexer %d] Found result: %s", idxr.ID, result)
 
 			// request processing for the result if it has not been processed
 			var processedLinks []Link
@@ -125,19 +124,21 @@ func (idxr *Indexer) ProcessPage(pageRequest PageRequest) {
 			}
 
 			results, err := json.Marshal(processedLinks)
-			if err == nil {
-				log.Printf("[Indexer %d] Found parent %s with data %s", idxr.ID, link.URL, results)
+			if err != nil {
+				Logger.checkErr(err, "Unable to parse JSON for processed links")
 			}
 
 			if len(processedLinks) == 0 {
 				newRequest := PageRequest{Href: link.URL}
 				PageQueue <- newRequest
+			} else {
+				Logger.Logf("[Indexer %d] Found parent %s with data %s", idxr.ID, link.URL, results)
 			}
 		}
 
 	} else {
 
-		log.Printf("[Indexer %d] Indexing of %s not authorized by robots.txt", idxr.ID, pageRequest.Href)
+		Logger.Logf("[Indexer %d] Indexing of %s not authorized by robots.txt", idxr.ID, pageRequest.Href)
 		return
 
 	}
@@ -151,7 +152,7 @@ func (idxr *Indexer) AuthorizeRobot(robotsURL string, pageRequest PageRequest) (
 	if err != nil {
 
 		// This situation is "undefined" per the spec, so just return and ignore the URL
-		log.Printf("[Indexer %d] Unable to retrieve %s: %s", idxr.ID, robotsURL, err.Error())
+		Logger.Logf("[Indexer %d] Unable to retrieve %s: %s", idxr.ID, robotsURL, err.Error())
 		return false, err
 
 	}
@@ -160,12 +161,12 @@ func (idxr *Indexer) AuthorizeRobot(robotsURL string, pageRequest PageRequest) (
 	resp.Body.Close()
 	if err != nil {
 
-		log.Printf("[Indexer %d] Unable to parse %s: %s", idxr.ID, robotsURL, err.Error())
+		Logger.Logf("[Indexer %d] Unable to parse %s: %s", idxr.ID, robotsURL, err.Error())
 		return false, err
 
 	}
 
-	log.Printf("[Indexer %d] Received status code %d from %s", idxr.ID, resp.StatusCode, robotsURL)
+	Logger.Logf("[Indexer %d] Received status code %d from %s", idxr.ID, resp.StatusCode, robotsURL)
 
 	return authorizer.TestAgent(pageRequest.Href, "go-web-crawler"), nil
 }
@@ -200,15 +201,15 @@ func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, 
 
 					if !exists {
 
-						log.Println("Parent: " + parentURL + ", URL: " + url)
+						Logger.Logf("[Indexer %d] Parent: %s, URL: %s", idxr.ID, parentURL, url)
 						newLink := NewLink(GetMD5Hash(parentURL), parentURL, url)
 						existingLink := NewLink(GetMD5Hash(parentURL), parentURL, url)
-						log.Printf("Existing Link %v", &existingLink)
+						Logger.Logf("[Indexer %d] Existing Link %v", idxr.ID, &existingLink)
 
 						tx, err := dbmap.Begin()
 
 						if err != nil {
-							log.Fatalf("[Indexer %d] Transaction was nil. Error: %s. Couldn't insert URL %s with Parent %s", idxr.ID, err.Error(), existingLink.URL, existingLink.Parent)
+							Logger.Logf("[Indexer %d] Transaction was nil. Error: %s. Couldn't insert URL %s with Parent %s", idxr.ID, err.Error(), existingLink.URL, existingLink.Parent)
 							continue
 						}
 
@@ -219,7 +220,7 @@ func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, 
 						case selectErr == sql.ErrNoRows:
 							txInsert, _ := dbmap.Begin()
 							insertErr := txInsert.Insert(&newLink)
-							checkErr(insertErr, "[Indexer %d] Error inserting link into db")
+							Logger.checkErr(insertErr, fmt.Sprintf("[Indexer %d] Error inserting link into db", idxr.ID))
 							if insertErr != nil {
 								txInsert.Rollback()
 							} else {
@@ -227,7 +228,7 @@ func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, 
 							}
 
 						case selectErr != nil:
-							checkErr(selectErr, "[Indexer %d] Error retrieving link")
+							Logger.checkErr(selectErr, "[Indexer %d] Error retrieving link")
 						}
 
 						links = append(links, newLink)
@@ -245,6 +246,6 @@ func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, 
 // For now, only accept URLs that start with http
 func linkIsValid(link string) bool {
 
-	return strings.HasPrefix(link, "http")
+	return strings.HasPrefix(link, "http") || strings.HasPrefix(link, "/")
 
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"time"
 )
 
@@ -19,7 +18,7 @@ func StartDispatcher(numWorkers int, maxSeconds int) {
 
 		indexer := NewIndexer(i+1, WorkerQueue)
 
-		log.Printf("[Dispatcher] Starting Indexer %d", indexer.ID)
+		Logger.Logf("[Dispatcher] Starting Indexer %d", indexer.ID)
 
 		indexer.Start()
 
@@ -31,12 +30,12 @@ func StartDispatcher(numWorkers int, maxSeconds int) {
 		for {
 			select {
 			case pageRequest := <-PageQueue:
-				log.Printf("[Dispatcher] Received page request for %s\n", pageRequest.Href)
+				Logger.Logf("[Dispatcher] Received page request for %s\n", pageRequest.Href)
 
 				go func(pageRequest PageRequest) {
 					worker := <-WorkerQueue
 
-					log.Printf("[Dispatcher] Dispatching page request for %s", pageRequest.Href)
+					Logger.Logf("[Dispatcher] Dispatching page request for %s", pageRequest.Href)
 
 					worker <- pageRequest
 

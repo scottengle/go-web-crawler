@@ -19,7 +19,7 @@ func GenerateInboundLinksReport(asJSON bool) {
 
 	items, err := GetReportData()
 	if err != nil {
-		checkErr(err, "Couldn't generate report")
+		Logger.checkErr(err, "Couldn't generate report")
 		return
 	}
 
@@ -39,7 +39,7 @@ func GenerateParentChildLinksReport(asJSON bool) {
 
 	items, err := GetReportData()
 	if err != nil {
-		checkErr(err, "Couldn't generate report")
+		Logger.checkErr(err, "Couldn't generate report")
 		return
 	}
 
