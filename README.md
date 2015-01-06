@@ -38,4 +38,4 @@ Use -help to get a list of commands:
 License
 =======
 
-[MIT License] (../blob/master/LICENSE)
+[MIT License] (LICENSE)
