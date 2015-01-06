@@ -1,7 +1,7 @@
 go-web-crawler
 ==============
 
-A toy web crawler written in Go for a "Dev Day" over the course of about 12 hours.
+A toy web crawler written in Go.
 
 Requirements
 ============
