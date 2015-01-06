@@ -10,9 +10,13 @@ Requirements
 required to build. You should be able to "go get" these:
 
 Gorp: github.com/coopernurse/gorp
+
 Sqlite3: "github.com/mattn/go-sqlite3"
+
 go-html-transform: "code.google.com/p/go-html-transform"
+
 go.net/html: "code.google.com/p/go.net/html"
+
 robotstxt-go: "github.com/temoto/robotstxt-go"
 
 Known Issues
