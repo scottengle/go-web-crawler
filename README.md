@@ -9,20 +9,15 @@ Requirements
 3rd party dependencies have not been vendored yet. The following packages are
 required to build. You should be able to "go get" these:
 
-Gorp: github.com/coopernurse/gorp
+[Gorp] (https://github.com/coopernurse/gorp)
 
-Sqlite3: "github.com/mattn/go-sqlite3"
+[Sqlite3] (https://github.com/mattn/go-sqlite3)
 
-go-html-transform: "code.google.com/p/go-html-transform"
+[go-html-transform] (https://code.google.com/p/go-html-transform)
 
-go.net/html: "code.google.com/p/go.net/html"
+[go.net/html] (https://code.google.com/p/go.net/html)
 
-robotstxt-go: "github.com/temoto/robotstxt-go"
-
-Known Issues
-============
-
-* There are no known issues at this time
+[robotstxt-go] (https://github.com/temoto/robotstxt-go)
 
 Usage
 =====
@@ -38,6 +33,11 @@ Basic usage with defaults and provided start URL:
 Use -help to get a list of commands:
 
     ./go-web-crawler -help
+
+Known Issues
+============
+
+* There are no known issues at this time
 
 License
 =======
