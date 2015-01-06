@@ -34,3 +34,8 @@ Basic usage with defaults and provided start URL:
 Use -help to get a list of commands:
 
     ./go-web-crawler -help
+
+License
+=======
+
+[MIT License] (../blob/master/LICENSE)
