@@ -1,14 +1,17 @@
 package main
 
 import (
+	"crypto/md5"
 	"database/sql"
-	"encoding/json"
+	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/coopernurse/gorp"
-	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"os"
+	"sync"
+
+	"github.com/coopernurse/gorp"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const helpText = `
@@ -29,12 +32,19 @@ Options:
    -max-workers=1           maximum number of goroutines to run concurrently
    -max-queue-size=100      maximum number of queued page requests
    -max-runtime-seconds=10  maximum number of seconds to run the crawler
-   -run-report-1            generate the "Inbound Link Frequency" report
-   -run-report-2            generate the "Parent-Child Links" report
+   -report=1            	generate the "Inbound Link Frequency" report
+   -report=2            	generate the "Parent/Child Links" report
+   -report-format			output report results as either "json" or "tabular"
 `
 
+// PageQueue is a channel to queue up page requests
 var PageQueue chan PageRequest
+
+// QuitChannel is a signal channel used to stop execution
 var QuitChannel chan struct{}
+
+// Lock is a mutex used to protect the database
+var Lock = &sync.Mutex{}
 
 func main() {
 	// show help text if -help flag is specified
@@ -54,26 +64,38 @@ func start() int {
 
 	start := flag.String("start", "", "Start indexing on this URL")
 	maxWorkers := flag.Int("max-workers", 1, "Maximum number of indexing workers")
-	maxQueue := flag.Int("max-queue-size", 100, "Maximum number of queued page requests")
+	maxQueue := flag.Int("max-queue-size", 100, "Maximum number of queued page requests allowed")
 	maxSeconds := flag.Int("max-runtime-seconds", 10, "Maximum number of seconds to run the crawler")
-	report1 := flag.Bool("run-report-1", false, "Run report 1 without crawling")
-	report2 := flag.Bool("run-report-2", false, "Run report 2 without crawling")
+	report := flag.Int("report", 0, "Generate a report without crawling")
+	format := flag.String("report-format", "json", "Format of the report. Value is ignored if not running reports.")
 	flag.Parse()
 
-	if *report1 {
-		log.Println("[go-web-crawler] Running Report 1 - Inbound Link Counts Per Page")
-		RunReport1()
+	if *start == "" && *report == 0 {
+		log.Println("[go-web-crawler] No starting URL specified and invalid report.")
+		log.Println("[go-web-crawler] Specify a starting URL with -start, or request a report with -report=1 or -report=2.")
 		return 0
 	}
 
-	if *report2 {
-		log.Println("[go-web-crawler] Running Report 2 - Parent/Child Link Connections")
-		RunReport2()
+	if *start == "" && *report < 1 || *report > 2 {
+		log.Println("[go-web-crawler] Report requested does not exist. Valid report ID's are: [1, 2]")
 		return 0
 	}
 
-	if *start == "" {
-		panic("[go-web-crawler] No starting URL!")
+	if *format != "json" && *format != "tabular" {
+		log.Println("[go-web-crawler] Report format requested is not supported. Valid report-format strings are: ['json', 'tabular']")
+		return 0
+	}
+
+	if *report == 1 {
+		log.Println("[go-web-crawler] Running Inbound Link Counts Report")
+		GenerateInboundLinksReport(reportFormatIsJSON(*format))
+		return 0
+	}
+
+	if *report == 2 {
+		log.Println("[go-web-crawler] Running Parent/Child Link Report")
+		GenerateParentChildLinksReport(reportFormatIsJSON(*format))
+		return 0
 	}
 
 	if *maxQueue < 1 {
@@ -93,8 +115,7 @@ func start() int {
 
 	log.Printf("[go-web-crawler] Started at page %s with %d indexers and with max queue of %d and a running time of %d seconds", *start, *maxWorkers, *maxQueue, *maxSeconds)
 
-	dbmap := initDb()
-	defer dbmap.Db.Close()
+	initDb()
 
 	PageQueue = make(chan PageRequest, *maxQueue)
 	QuitChannel = make(chan struct{})
@@ -110,7 +131,7 @@ func start() int {
 	}
 }
 
-func initDb() *gorp.DbMap {
+func initDb() {
 	dbmap := connect()
 
 	// create the table. in a production system you'd generally
@@ -118,10 +139,13 @@ func initDb() *gorp.DbMap {
 	err := dbmap.CreateTablesIfNotExists()
 	checkErr(err, "Create tables failed")
 
-	return dbmap
+	dbmap.TruncateTables()
+	disconnect(dbmap)
 }
 
 func connect() *gorp.DbMap {
+	Lock.Lock()
+
 	// connect to db using standard Go database/sql API
 	// use whatever database/sql driver you wish
 	db, err := sql.Open("sqlite3", "post_db.bin")
@@ -137,56 +161,28 @@ func connect() *gorp.DbMap {
 	return dbmap
 }
 
+func disconnect(dbmap *gorp.DbMap) {
+	dbmap.Db.Close()
+	Lock.Unlock()
+}
+
 func checkErr(err error, msg string) {
 	if err != nil {
 		log.Fatalln(msg, err)
 	}
 }
 
-type ReportItem struct {
-	URL   string `json:"url"`
-	Count int    `json:"count"`
+// GetMD5Hash converts the specified text to an MD5 hash
+func GetMD5Hash(text string) string {
+
+	hasher := md5.New()
+
+	hasher.Write([]byte(text))
+
+	return hex.EncodeToString(hasher.Sum(nil))
+
 }
 
-type ReportItem2 struct {
-	URL    string `json:"url"`
-	Parent string `json:"parent"`
-}
-
-func RunReport1() {
-	dbmap := connect()
-
-	var items []ReportItem
-
-	tx, _ := dbmap.Begin()
-	_, err := tx.Select(&items, "SELECT URL, COUNT(*) AS Count from links GROUP BY URL ORDER BY Count DESC")
-	checkErr(err, "Couldn't generate report")
-
-	results, _ := json.MarshalIndent(items, "", "  ")
-	log.Printf("[go-web-crawler] Report:\n%s", results)
-	tx.Commit()
-
-	dbmap.Db.Close()
-
-	return
-}
-
-func RunReport2() {
-	dbmap := connect()
-
-	var items2 []ReportItem2
-
-	tx, _ := dbmap.Begin()
-	_, err := tx.Select(&items2, "SELECT URL, Parent from links ORDER BY Parent")
-	checkErr(err, "Couldn't generate 2nd report")
-
-	log.Printf("[go-web-crawler] Report 2:\n")
-	for _, item2 := range items2 {
-		fmt.Printf("Link: %s -> %s\n", item2.Parent, item2.URL)
-	}
-	tx.Commit()
-
-	dbmap.Db.Close()
-
-	return
+func reportFormatIsJSON(format string) bool {
+	return format == "json"
 }

@@ -1,19 +1,18 @@
 package main
 
 import (
-	"code.google.com/p/go-html-transform/h5"
-	exphtml "code.google.com/p/go.net/html"
-	"crypto/md5"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/coopernurse/gorp"
-	"github.com/temoto/robotstxt-go"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"code.google.com/p/go-html-transform/h5"
+	exphtml "code.google.com/p/go.net/html"
+	"github.com/coopernurse/gorp"
+	"github.com/temoto/robotstxt-go"
 )
 
 // NewIndexer creates a new Indexer worker
@@ -102,6 +101,8 @@ func (idxr *Indexer) ProcessPage(pageRequest PageRequest) {
 		}
 
 		dbmap := connect()
+		defer disconnect(dbmap)
+
 		results := idxr.ScrapePage(resp, rootURL, pageRequest.Href, dbmap)
 		for _, link := range results {
 
@@ -182,7 +183,7 @@ func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, 
 		if node.Type == exphtml.ElementNode && node.Data == "a" {
 
 			for _, elem := range node.Attr {
-				if elem.Key == "href" {
+				if elem.Key == "href" && linkIsValid(elem.Val) {
 
 					url := elem.Val
 
@@ -200,8 +201,8 @@ func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, 
 					if !exists {
 
 						log.Println("Parent: " + parentURL + ", URL: " + url)
-						newLink := NewLink(GetMD5Hash(parentURL), url)
-						existingLink := NewLink(GetMD5Hash(parentURL), url)
+						newLink := NewLink(GetMD5Hash(parentURL), parentURL, url)
+						existingLink := NewLink(GetMD5Hash(parentURL), parentURL, url)
 						log.Printf("Existing Link %v", &existingLink)
 
 						tx, err := dbmap.Begin()
@@ -218,7 +219,7 @@ func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, 
 						case selectErr == sql.ErrNoRows:
 							txInsert, _ := dbmap.Begin()
 							insertErr := txInsert.Insert(&newLink)
-							checkErr(insertErr, "Error inserting link into db")
+							checkErr(insertErr, "[Indexer %d] Error inserting link into db")
 							if insertErr != nil {
 								txInsert.Rollback()
 							} else {
@@ -226,7 +227,7 @@ func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, 
 							}
 
 						case selectErr != nil:
-							checkErr(selectErr, "Error retrieving link")
+							checkErr(selectErr, "[Indexer %d] Error retrieving link")
 						}
 
 						links = append(links, newLink)
@@ -240,13 +241,10 @@ func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, 
 	return links
 }
 
-// GetMD5Hash converts the specified text to an MD5 hash
-func GetMD5Hash(text string) string {
+// Attempt to eliminate meaningless or invalid URLs
+// For now, only accept URLs that start with http
+func linkIsValid(link string) bool {
 
-	hasher := md5.New()
-
-	hasher.Write([]byte(text))
-
-	return hex.EncodeToString(hasher.Sum(nil))
+	return strings.HasPrefix(link, "http")
 
 }

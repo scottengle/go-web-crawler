@@ -1,4 +1,4 @@
-Web Crawler
+Web Crawler v1
 
 - fetch goroutine gets URL from buffer if: buffer is not empty and URL is in state "new"
 - - attempt to retrieve robots.txt from root of site
@@ -18,8 +18,23 @@ Web Crawler
 
 Bonus:
 
-Write output to a file
-Write output to a database
-Statistical Report on domain frequency
-Support for configuration file for arguments
-Don't allow circular references (where both pages refer to each other)
+- Write output to a file
+- Write output to a database
+- Statistical Report on domain frequency
+- Support for configuration file for arguments
+- Don't allow circular references (where both pages refer to each other)
+
+Web Crawler v2
+
+- Use goquery instead of custom indexer
+- Protect shared database resources with a sync.Mutex instead of a channel
+- don't hard code start url, use user input
+- don't panic when start url is not provided - exit gracefully
+- Make the Parent/Child report more useful
+- Clear data from prior run on start
+- Make log messages less verbose
+
+Bonus:
+
+- Generate godoc
+- Vendorize deps

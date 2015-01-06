@@ -18,5 +18,19 @@ robotstxt-go: "github.com/temoto/robotstxt-go"
 Known Issues
 ============
 
-* The application works reasonably well when using 1 worker. Concurrent workers can cause issues with database locks.
-* Log messages are out of control
+* There are no known issues at this time
+
+Usage
+=====
+
+Build the project:
+
+    go build
+
+Basic usage with defaults and provided start URL:
+
+    ./go-web-crawler -start http://www.startpage.com
+
+Use -help to get a list of commands:
+
+    ./go-web-crawler -help
