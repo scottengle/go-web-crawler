@@ -13,9 +13,7 @@ required to build this application. You should be able to "go get" these:
 
 [Sqlite3] (https://github.com/mattn/go-sqlite3)
 
-[go-html-transform] (https://code.google.com/p/go-html-transform)
-
-[go.net/html] (https://code.google.com/p/go.net/html)
+[goquery] (https://github.com/PuerkitoBio/goquery)
 
 [robotstxt-go] (https://github.com/temoto/robotstxt-go)
 

@@ -8,8 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"code.google.com/p/go-html-transform/h5"
-	exphtml "code.google.com/p/go.net/html"
+	"github.com/PuerkitoBio/goquery"
 	"github.com/coopernurse/gorp"
 	"github.com/temoto/robotstxt-go"
 )
@@ -171,69 +170,72 @@ func (idxr *Indexer) AuthorizeRobot(robotsURL string, pageRequest PageRequest) (
 	return authorizer.TestAgent(pageRequest.Href, "go-web-crawler"), nil
 }
 
-// ScrapePage takes a response body and scrapes it for all a tags
+// ScrapePage scrapes all a tags from the page
 func (idxr *Indexer) ScrapePage(resp *http.Response, rootURL, parentURL string, dbmap *gorp.DbMap) []Link {
-
-	tree, _ := h5.New(resp.Body)
-	defer resp.Body.Close()
 
 	links := make([]Link, 0)
 
-	tree.Walk(func(node *exphtml.Node) {
+	doc, err := goquery.NewDocumentFromResponse(resp)
+	if err != nil {
+		Logger.Logf("[Indexer %d] Couldn't parse response: %s", idxr.ID, err.Error())
+		return links
+	}
 
-		if node.Type == exphtml.ElementNode && node.Data == "a" {
+	doc.Find("a").Each(func(i int, s *goquery.Selection) {
+		if link, ok := s.Attr("href"); ok {
+			if linkIsValid(link) {
+				url := link
 
-			for _, elem := range node.Attr {
-				if elem.Key == "href" && linkIsValid(elem.Val) {
+				if strings.HasPrefix(url, "/") {
+					url = fmt.Sprintf("%s%s", rootURL, url)
+				}
 
-					url := elem.Val
+				if strings.HasSuffix(url, "/") {
+					// remove trailing slash
+					url = strings.TrimSuffix(url, "/")
+				}
 
-					if strings.HasPrefix(elem.Val, "/") {
-						url = fmt.Sprintf("%s%s", rootURL, elem.Val)
+				exists := false
+				for _, link := range links {
+					if url == link.URL {
+						exists = true
+					}
+				}
+
+				if !exists {
+
+					Logger.Logf("[Indexer %d] Parent: %s, URL: %s", idxr.ID, parentURL, url)
+					newLink := NewLink(GetMD5Hash(parentURL), parentURL, url)
+					existingLink := NewLink(GetMD5Hash(parentURL), parentURL, url)
+					Logger.Logf("[Indexer %d] Existing Link %v", idxr.ID, &existingLink)
+
+					tx, err := dbmap.Begin()
+
+					if err != nil {
+						Logger.Logf("[Indexer %d] Transaction was nil. Error: %s. Couldn't insert URL %s with Parent %s", idxr.ID, err.Error(), existingLink.URL, existingLink.Parent)
+						return
 					}
 
-					exists := false
-					for _, link := range links {
-						if url == link.URL {
-							exists = true
+					selectErr := tx.SelectOne(&existingLink, "SELECT * FROM links WHERE URL LIKE ? and Parent LIKE ?;", existingLink.URL, existingLink.Parent)
+					tx.Commit()
+
+					switch {
+					case selectErr == sql.ErrNoRows:
+						txInsert, _ := dbmap.Begin()
+						insertErr := txInsert.Insert(&newLink)
+						Logger.checkErr(insertErr, fmt.Sprintf("[Indexer %d] Error inserting link into db", idxr.ID))
+						if insertErr != nil {
+							txInsert.Rollback()
+						} else {
+							txInsert.Commit()
 						}
+
+					case selectErr != nil:
+						Logger.checkErr(selectErr, "[Indexer %d] Error retrieving link")
 					}
 
-					if !exists {
+					links = append(links, newLink)
 
-						Logger.Logf("[Indexer %d] Parent: %s, URL: %s", idxr.ID, parentURL, url)
-						newLink := NewLink(GetMD5Hash(parentURL), parentURL, url)
-						existingLink := NewLink(GetMD5Hash(parentURL), parentURL, url)
-						Logger.Logf("[Indexer %d] Existing Link %v", idxr.ID, &existingLink)
-
-						tx, err := dbmap.Begin()
-
-						if err != nil {
-							Logger.Logf("[Indexer %d] Transaction was nil. Error: %s. Couldn't insert URL %s with Parent %s", idxr.ID, err.Error(), existingLink.URL, existingLink.Parent)
-							continue
-						}
-
-						selectErr := tx.SelectOne(&existingLink, "SELECT * FROM links WHERE URL LIKE ? and Parent LIKE ?;", existingLink.URL, existingLink.Parent)
-						tx.Commit()
-
-						switch {
-						case selectErr == sql.ErrNoRows:
-							txInsert, _ := dbmap.Begin()
-							insertErr := txInsert.Insert(&newLink)
-							Logger.checkErr(insertErr, fmt.Sprintf("[Indexer %d] Error inserting link into db", idxr.ID))
-							if insertErr != nil {
-								txInsert.Rollback()
-							} else {
-								txInsert.Commit()
-							}
-
-						case selectErr != nil:
-							Logger.checkErr(selectErr, "[Indexer %d] Error retrieving link")
-						}
-
-						links = append(links, newLink)
-
-					}
 				}
 			}
 		}
