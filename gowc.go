@@ -30,9 +30,9 @@ Options:
    -max-workers=1           maximum number of goroutines to run concurrently
    -max-queue-size=100      maximum number of queued page requests
    -max-runtime-seconds=10  maximum number of seconds to run the crawler
-   -report=1            	generate the "Inbound Link Frequency" report
-   -report=2            	generate the "Parent/Child Links" report
-   -report-format			output report results as either "json" or "tabular"
+   -report=1                generate the "Inbound Link Frequency" report
+   -report=2                generate the "Parent/Child Links" report
+   -report-format           output report results as either "json" or "tabular"
 `
 
 // PageQueue is a channel to queue up page requests
